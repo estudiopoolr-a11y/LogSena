@@ -6,13 +6,14 @@ const QRCode = require('qrcode');
 const db = require('./init-db');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 const JWT_SECRET = 'logsena-secret-key-change-in-production';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(__dirname)); // Serve static files
 
 // Middleware para autenticación JWT
 function authenticateToken(req, res, next) {

@@ -10,7 +10,7 @@ const appState = {
         institutionName: "Centro de Biotecnología Industrial (CBI) Palmira",
         qrExpirationDays: 365
     },
-    apiBaseUrl: 'http://localhost:3000/api' // URL de la API backend
+    apiBaseUrl: 'http://localhost:3002/api' // URL de la API backend
 };
 
 // Inicialización
