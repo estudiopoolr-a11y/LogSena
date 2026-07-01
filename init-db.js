@@ -18,6 +18,8 @@ function createTables() {
             email TEXT,
             document_number TEXT UNIQUE,
             phone TEXT,
+            program TEXT,
+            ficha TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1
@@ -68,7 +70,9 @@ function insertSampleUsers() {
             full_name: 'Administrador del Sistema',
             email: 'admin@logsena.edu.co',
             document_number: '1000000001',
-            phone: '3001234567'
+            phone: '3001234567',
+            program: null,
+            ficha: null
         },
         {
             username: 'guardia1',
@@ -77,7 +81,9 @@ function insertSampleUsers() {
             full_name: 'Juan Guardia',
             email: 'guardia@logsena.edu.co',
             document_number: '1000000002',
-            phone: '3001234568'
+            phone: '3001234568',
+            program: null,
+            ficha: null
         },
         {
             username: 'instructor1',
@@ -86,7 +92,9 @@ function insertSampleUsers() {
             full_name: 'María Instructora',
             email: 'instructor@logsena.edu.co',
             document_number: '1000000003',
-            phone: '3001234569'
+            phone: '3001234569',
+            program: null,
+            ficha: null
         },
         {
             username: 'aprendiz1',
@@ -95,7 +103,9 @@ function insertSampleUsers() {
             full_name: 'Carlos Aprendiz',
             email: 'aprendiz@logsena.edu.co',
             document_number: '1000000004',
-            phone: '3001234570'
+            phone: '3001234570',
+            program: 'ADSO',
+            ficha: '3409924'
         },
         {
             username: 'visitante1',
@@ -104,11 +114,13 @@ function insertSampleUsers() {
             full_name: 'Ana Visitante',
             email: 'visitante@logsena.edu.co',
             document_number: '1000000005',
-            phone: '3001234571'
+            phone: '3001234571',
+            program: null,
+            ficha: null
         }
     ];
 
-    const insertUser = `INSERT OR IGNORE INTO users (username, password, role, full_name, email, document_number, phone) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    const insertUser = `INSERT OR IGNORE INTO users (username, password, role, full_name, email, document_number, phone, program, ficha) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     users.forEach(user => {
         const hashedPassword = bcrypt.hashSync(user.password, 8);
@@ -119,7 +131,9 @@ function insertSampleUsers() {
             user.full_name,
             user.email,
             user.document_number,
-            user.phone
+            user.phone,
+            user.program,
+            user.ficha
         ], function(err) {
             if (err) {
                 console.error(`Error inserting user ${user.username}:`, err);

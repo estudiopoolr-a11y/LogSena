@@ -181,8 +181,6 @@ async function fetchAccessLogs() {
 
 async function createUser(userData) {
     try {
-        // El password ya viene hasheado del frontend, pero en un caso real
-        // el hashing debería hacerse en el backend por seguridad
         const response = await fetch(`${appState.apiBaseUrl}/users`, {
             method: 'POST',
             headers: {
@@ -501,6 +499,7 @@ function loadUsersTable() {
                 <td>${user.program || '-'}</td>
                 <td>${user.ficha || '-'}</td>
                 <td>${getRoleLabel(user.role)}</td>
+                <td>${user.email || '-'}</td>
                 <td>${user.is_active ? 'Activo' : 'Inactivo'}</td>
                 <td>
                     <button class="action-btn edit-btn" data-id="${user.id}">Editar</button>
@@ -556,11 +555,29 @@ function editUser(id) {
     if (!user) return;
 
     // Llenar el formulario de registro con los datos del usuario
-    document.getElementById('reg-fullname').value = user.full_name;
-    document.getElementById('reg-document').value = user.document_number;
-    document.getElementById('reg-program').value = user.program || '';
-    document.getElementById('reg-ficha').value = user.ficha || '';
-    document.getElementById('reg-role').value = user.role;
+    document.getElementById('reg-username').value = user.username || '';
+    document.getElementById('reg-fullname').value = user.full_name || '';
+    document.getElementById('reg-document').value = user.document_number || '';
+    document.getElementById('reg-phone').value = user.phone || '';
+    document.getElementById('reg-email').value = user.email || '';
+    document.getElementById('reg-role').value = user.role || '';
+
+    // Mostrar u ocultar campos de programa y ficha según el rol
+    const role = user.role;
+    const programGroup = document.getElementById('program-group');
+    const fichaGroup = document.getElementById('ficha-group');
+    if (role === 'apprentice') {
+        programGroup.style.display = 'block';
+        fichaGroup.style.display = 'block';
+        document.getElementById('reg-program').value = user.program || '';
+        document.getElementById('reg-ficha').value = user.ficha || '';
+    } else {
+        programGroup.style.display = 'none';
+        fichaGroup.style.display = 'none';
+        // Limpiar los campos si no son aprendices
+        document.getElementById('reg-program').value = '';
+        document.getElementById('reg-ficha').value = '';
+    }
 
     // Cambiar el título y el comportamiento del botón
     document.querySelector('#register-view h2').textContent = 'Editar Usuario';
@@ -568,12 +585,14 @@ function editUser(id) {
     registerForm.onsubmit = (e) => {
         e.preventDefault();
         const updatedUserData = {
+            username: document.getElementById('reg-username').value,
             fullName: document.getElementById('reg-fullname').value,
             document: document.getElementById('reg-document').value,
-            program: document.getElementById('reg-program').value,
-            ficha: document.getElementById('reg-ficha').value,
+            phone: document.getElementById('reg-phone').value,
+            email: document.getElementById('reg-email').value,
             role: document.getElementById('reg-role').value,
-            email: user.email || '' // Mantener el email original o permitir edición
+            program: document.getElementById('reg-program').value,
+            ficha: document.getElementById('reg-ficha').value
         };
 
         updateUser(id, updatedUserData)
@@ -619,6 +638,8 @@ function showUserQR(id) {
         <p><strong>Nombre:</strong> ${user.full_name}</p>
         <p><strong>Documento:</strong> ${user.document_number}</p>
         <p><strong>Rol:</strong> ${getRoleLabel(user.role)}</p>
+        <p><strong>Programa:</strong> ${user.program || '-'}</p>
+        <p><strong>Ficha:</strong> ${user.ficha || '-'}</p>
         <p><strong>Email:</strong> ${user.email || 'No disponible'}</p>
     `;
 
@@ -805,46 +826,24 @@ function registerAccessForUser(user, type) {
         });
 }
 
-function showScanResult(user) {
-    const resultDiv = document.getElementById('scan-result');
-    const resultText = document.getElementById('scan-result-text');
-
-    if (user) {
-        resultText.innerHTML = `
-            <p><strong>Nombre:</strong> ${user.full_name}</p>
-            <p><strong>Documento:</strong> ${user.document_number}</p>
-            <p><strong>Rol:</strong> ${getRoleLabel(user.role)}</p>
-            <p><strong>Estado:</strong> ${user.is_active ? 'Activo' : 'Inactivo'}</p>
-        `;
-        resultDiv.style.display = 'block';
-
-        // Configurar botones de confirmación
-        document.getElementById('confirm-entry').onclick = () => {
-            registerAccessForUser(user, 'entry');
-        };
-
-        document.getElementById('confirm-exit').onclick = () => {
-            registerAccessForUser(user, 'exit');
-        };
-    } else {
-        resultText.textContent = 'Usuario no encontrado o código inválido.';
-        resultDiv.style.display = 'block';
-    }
-}
-
 // Funciones de reinicio de vistas
 function resetRegisterForm() {
     document.getElementById('register-form').reset();
     document.querySelector('#register-view h2').textContent = 'Registro de Usuarios';
+    // Ocultar campos de programa y ficha por defecto
+    document.getElementById('program-group').style.display = 'none';
+    document.getElementById('ficha-group').style.display = 'none';
     document.getElementById('register-form').onsubmit = (e) => {
         e.preventDefault();
         const newUserData = {
+            username: document.getElementById('reg-username').value,
             fullName: document.getElementById('reg-fullname').value,
             document: document.getElementById('reg-document').value,
+            phone: document.getElementById('reg-phone').value,
+            email: document.getElementById('reg-email').value,
+            role: document.getElementById('reg-role').value,
             program: document.getElementById('reg-program').value,
             ficha: document.getElementById('reg-ficha').value,
-            role: document.getElementById('reg-role').value,
-            email: '', // No hay campo de email en el formulario
             password: document.getElementById('reg-document').value // Usar documento como password temporal
         };
 
@@ -900,12 +899,14 @@ function setupGlobalListeners() {
         registerForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const newUserData = {
+                username: document.getElementById('reg-username').value,
                 fullName: document.getElementById('reg-fullname').value,
                 document: document.getElementById('reg-document').value,
+                phone: document.getElementById('reg-phone').value,
+                email: document.getElementById('reg-email').value,
+                role: document.getElementById('reg-role').value,
                 program: document.getElementById('reg-program').value,
                 ficha: document.getElementById('reg-ficha').value,
-                role: document.getElementById('reg-role').value,
-                email: '', // No hay campo de email en el formulario
                 password: document.getElementById('reg-document').value // Usar documento como password temporal
             };
 
@@ -919,6 +920,26 @@ function setupGlobalListeners() {
                     showMessage('register-message', 'Error al registrar el usuario. Verifique que el documento no esté duplicado.', 'error');
                     console.error('Error creating user:', error);
                 });
+        });
+    }
+
+    // Manejo de cambio de rol para mostrar/ocultar programa y ficha
+    const roleSelect = document.getElementById('reg-role');
+    if (roleSelect) {
+        roleSelect.addEventListener('change', (e) => {
+            const role = e.target.value;
+            const programGroup = document.getElementById('program-group');
+            const fichaGroup = document.getElementById('ficha-group');
+            if (role === 'apprentice') {
+                programGroup.style.display = 'block';
+                fichaGroup.style.display = 'block';
+            } else {
+                programGroup.style.display = 'none';
+                fichaGroup.style.display = 'none';
+                // Limpiar los campos cuando se ocultan
+                document.getElementById('reg-program').value = '';
+                document.getElementById('reg-ficha').value = '';
+            }
         });
     }
 
@@ -947,6 +968,34 @@ function setupGlobalListeners() {
         generateReportBtn.addEventListener('click', generateDailyReport);
     }
 
+    // Reporte por rango de fechas
+    const reportByDateBtn = document.getElementById('report-by-date');
+    if (reportByDateBtn) {
+        reportByDateBtn.addEventListener('click', generateDateRangeReport);
+    }
+
+    // Otros reportes (placeholder)
+    const reportByProgramBtn = document.getElementById('report-by-program');
+    if (reportByProgramBtn) {
+        reportByProgramBtn.addEventListener('click', () => {
+            showMessage('report-message', 'Reporte por programa no implementado aún.', 'info');
+        });
+    }
+
+    const reportByFichaBtn = document.getElementById('report-by-ficha');
+    if (reportByFichaBtn) {
+        reportByFichaBtn.addEventListener('click', () => {
+            showMessage('report-message', 'Reporte por ficha no implementado aún.', 'info');
+        });
+    }
+
+    const reportAbsentApprenticesBtn = document.getElementById('report-absent-aprendices');
+    if (reportAbsentApprenticesBtn) {
+        reportAbsentApprenticesBtn.addEventListener('click', () => {
+            showMessage('report-message', 'Reporte de aprendices ausentes no implementado aún.', 'info');
+        });
+    }
+
     // Enviar QR por email (simulado)
     const sendQREmailBtn = document.getElementById('send-qr-email');
     if (sendQREmailBtn) {
@@ -971,7 +1020,8 @@ function setupGlobalListeners() {
                     user.full_name.toLowerCase().includes(searchTerm) ||
                     user.document_number.toLowerCase().includes(searchTerm) ||
                     (user.program && user.program.toLowerCase().includes(searchTerm)) ||
-                    (user.ficha && user.ficha.toLowerCase().includes(searchTerm))
+                    (user.ficha && user.ficha.toLowerCase().includes(searchTerm)) ||
+                    (user.email && user.email.toLowerCase().includes(searchTerm))
                 );
                 renderUsersTable(filteredUsers);
             });
@@ -999,7 +1049,7 @@ function setupGlobalListeners() {
             setTimeout(() => {
                 showMessage('report-message', 'Reporte exportado a PDF correctamente.', 'success');
             }, 1500);
-        });
+        };
     }
 
     const exportExcelBtn = document.getElementById('export-excel');
@@ -1032,6 +1082,9 @@ function generateDailyReport() {
                     <th>Documento</th>
                     <th>Tipo</th>
                     <th>Rol</th>
+                    <th>Programa</th>
+                    <th>Ficha</th>
+                    <th>Correo</th>
                 </tr>
             </thead>
             <tbody>
@@ -1039,13 +1092,91 @@ function generateDailyReport() {
 
     todayLogs.forEach(log => {
         const time = new Date(log.timestamp).toTimeString().slice(0, 5);
+        // Obtener el nombre del usuario desde el cache o desde el log (si lo tenemos)
+        // En este es un modelo
+        const user = appState.users.find(u => u.id === log.user_id) || {};
         reportHTML += `
             <tr>
                 <td>${time}</td>
-                <td>${log.user_name || 'Usuario desconocido'}</td>
-                <td>${log.user_document || 'N/A'}</td>
+                <td>${user.full_name || 'Usuario desconocido'}</td>
+                <td>${user.document_number || 'N/A'}</td>
                 <td>${log.action === 'entry' ? 'Entrada' : 'Salida'}</td>
-                <td>${getRoleLabel(log.user_role || 'unknown')}</td>
+                <td>${getRoleLabel(user.role || 'unknown')}</td>
+                <td>${user.program || '-'}</td>
+                <td>${user.ficha || '-'}</td>
+                <td>${user.email || '-'}</td>
+            </tr>
+        `;
+    });
+
+    reportHTML += `
+            </tbody>
+            </table>
+    `;
+
+    document.getElementById('report-output').innerHTML = reportHTML;
+}
+
+function generateDateRangeReport() {
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+
+    if (!startDate || !endDate) {
+        showMessage('report-message', 'Por favor, seleccione ambas fechas.', 'error');
+        return;
+    }
+
+    if (startDate > endDate) {
+        showMessage('report-message', 'La fecha de inicio no puede ser posterior a la fecha de fin.', 'error');
+        return;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    // Incluir todo el día de la fecha de fin
+    end.setHours(23, 59, 59, 999);
+
+    const filteredLogs = appState.accessLogs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        return logDate >= start && logDate <= end;
+    });
+
+    let reportHTML = `
+        <h3>Reporte de Accesos desde ${startDate} hasta ${endDate}</h3>
+        <p>Total de registros: ${filteredLogs.length}</p>
+        <p>Entradas: ${filteredLogs.filter(log => log.action === 'entry').length}</p>
+        <p>Salidas: ${filteredLogs.filter(log => log.action === 'exit').length}</p>
+        <h4>Detalle de accesos:</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Hora</th>
+                    <th>Nombre</th>
+                    <th>Documento</th>
+                    <th>Tipo</th>
+                    <th>Rol</th>
+                    <th>Programa</th>
+                    <th>Ficha</th>
+                    <th>Correo</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    filteredLogs.forEach(log => {
+        const time = new Date(log.timestamp).toTimeString().slice(0, 5);
+        // Obtener el nombre del usuario desde el cache
+        const user = appState.users.find(u => u.id === log.user_id) || {};
+        reportHTML += `
+            <tr>
+                <td>${time}</td>
+                <td>${user.full_name || 'Usuario desconocido'}</td>
+                <td>${user.document_number || 'N/A'}</td>
+                <td>${log.action === 'entry' ? 'Entrada' : 'Salida'}</td>
+                <td>${getRoleLabel(user.role || 'unknown')}</td>
+                <td>${user.program || '-'}</td>
+                <td>${user.ficha || '-'}</td>
+                <td>${user.email || '-'}</td>
             </tr>
         `;
     });
@@ -1129,6 +1260,7 @@ function renderUsersTable(usersArray) {
             <td>${user.program || '-'}</td>
             <td>${user.ficha || '-'}</td>
             <td>${getRoleLabel(user.role)}</td>
+            <td>${user.email || '-'}</td>
             <td>${user.is_active ? 'Activo' : 'Inactivo'}</td>
             <td>
                 <button class="action-btn edit-btn" data-id="${user.id}">Editar</button>
@@ -1234,7 +1366,7 @@ function showView(viewId) {
         resetRegisterForm();
     } else if (viewId === 'scan-view') {
         // El escaneo se inicia cuando se muestra la vista
-        setTimeout(setupQRScanner, 100); // Pequeño delay para asegurar que el DOM esté listo
+        setTimeout(setupQRScanner, 100);
     }
 }
 

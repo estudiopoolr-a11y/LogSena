@@ -3,11 +3,26 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
+const nodemailer = require('nodemailer');
 const db = require('./init-db');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 const JWT_SECRET = 'logsena-secret-key-change-in-production';
+
+// Configurar nodemailer para envío de correos
+let transporter;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
+        port: process.env.EMAIL_PORT || 587,
+        secure: false, // true for 465, false for other ports
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+}
 
 // Middleware
 app.use(cors());
@@ -43,6 +58,67 @@ function authorizeRole(roles) {
     };
 }
 
+// Función para enviar correo con el código QR
+async function sendQREmail(user) {
+    if (!transporter || !user.email) {
+        console.log('Servicio de correo no configurado o usuario sin email');
+        return;
+    }
+
+    try {
+        // Generar el código QR como data URL
+        const qrData = {
+            userId: user.id,
+            username: user.username,
+            fullName: user.full_name,
+            role: user.role,
+            program: user.program,
+            ficha: user.ficha,
+            timestamp: Date.now(),
+            version: '1.0'
+        };
+        const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrData));
+
+        // Correo HTML
+        const mailOptions = {
+            from: process.env.EMAIL_FROM || `"LogSena" <${process.env.EMAIL_USER}>`,
+            to: user.email,
+            subject: 'Su Código QR de Acceso - LogSena',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>¡Bienvenido al Sistema LogSena!</h2>
+                    <p>Hola ${user.full_name},</p>
+                    <p>Se ha registrado exitosamente en el sistema de control de acceso LogSena. A continuación encontrará su información y código QR para acceder:</p>
+                    <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>Nombre:</strong> ${user.full_name}</p>
+                        <p><strong>Usuario:</strong> ${user.username}</p>
+                        <p><strong>Rol:</strong> ${user.role}</p>
+                        ${user.program ? `<p><strong>Programa:</strong> ${user.program}</p>` : ''}
+                        ${user.ficha ? `<p><strong>Ficha:</strong> ${user.ficha}</p>` : ''}
+                        <p><strong>Documento:</strong> ${user.document_number}</p>
+                        <p><strong>Correo electrónico:</strong> ${user.email}</p>
+                    </div>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <h3>Su Código QR:</h3>
+                        <img src="${qrCodeDataURL}" alt="Código QR" style="max-width: 200px;">
+                    </div>
+                    <p>Por favor, guarde este código QR y preséntelo en los puntos de acceso para registrar su entrada y salida.</p>
+                    <hr>
+                    <p style="font-size: 0.9em; color: #666;">
+                        Este es un correo automático, por favor no responda a este mensaje.
+                    </p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Código QR enviado a ${user.email}`);
+    } catch (error) {
+        console.error('Error al enviar correo electrónico:', error);
+        // No lanzamos el error para no fallar el registro del usuario
+    }
+}
+
 // Rutas de autenticación
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
@@ -51,7 +127,7 @@ app.post('/api/login', (req, res) => {
         return res.status(400).json({ error: 'Usuario y contraseña son requeridos' });
     }
 
-    db.get('SELECT * FROM users WHERE username = ? AND is_active = 1', [username], (err, user) => {
+    db.get('SELECT id, username, password, role, full_name, email, document_number, phone, program, ficha FROM users WHERE username = ? AND is_active = 1', [username], (err, user) => {
         if (err) {
             return res.status(500).json({ error: 'Error al consultar usuario' });
         }
@@ -89,7 +165,7 @@ app.post('/api/login', (req, res) => {
 
 // Ruta para obtener el perfil del usuario
 app.get('/api/profile', authenticateToken, (req, res) => {
-    db.get('SELECT id, username, role, full_name, email, document_number, phone FROM users WHERE id = ?',
+    db.get('SELECT id, username, role, full_name, email, document_number, phone, program, ficha FROM users WHERE id = ?',
         [req.user.id], (err, user) => {
         if (err) {
             return res.status(500).json({ error: 'Error al obtener perfil' });
@@ -103,7 +179,7 @@ app.get('/api/profile', authenticateToken, (req, res) => {
 
 // Rutas de usuarios (solo para administradores y guardias)
 app.get('/api/users', authenticateToken, authorizeRole(['admin', 'guard']), (req, res) => {
-    db.all('SELECT id, username, role, full_name, email, document_number, phone, is_active, created_at FROM users ORDER BY created_at DESC',
+    db.all('SELECT id, username, role, full_name, email, document_number, phone, program, ficha, is_active, created_at FROM users ORDER BY created_at DESC',
         [], (err, users) => {
         if (err) {
             return res.status(500).json({ error: 'Error al obtener usuarios' });
@@ -114,18 +190,23 @@ app.get('/api/users', authenticateToken, authorizeRole(['admin', 'guard']), (req
 
 // Ruta para crear un nuevo usuario
 app.post('/api/users', authenticateToken, authorizeRole(['admin', 'guard']), (req, res) => {
-    const { username, password, role, full_name, email, document_number, phone } = req.body;
+    const { username, password, role, full_name, email, document_number, phone, program, ficha } = req.body;
 
+    // Validar campos requeridos
     if (!username || !password || !role || !full_name) {
         return res.status(400).json({ error: 'Campos requeridos: username, password, role, full_name' });
+    }
+    // Correo electrónico requerido para todos los usuarios
+    if (!email) {
+        return res.status(400).json({ error: 'El correo electrónico es requerido' });
     }
 
     const hashedPassword = bcrypt.hashSync(password, 8);
 
     db.run(
-        `INSERT INTO users (username, password, role, full_name, email, document_number, phone)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [username, hashedPassword, role, full_name, email || null, document_number || null, phone || null],
+        `INSERT INTO users (username, password, role, full_name, email, document_number, phone, program, ficha)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [username, hashedPassword, role, full_name, email || null, document_number || null, phone || null, program || null, ficha || null],
         function(err) {
             if (err) {
                 if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -133,9 +214,20 @@ app.post('/api/users', authenticateToken, authorizeRole(['admin', 'guard']), (re
                 }
                 return res.status(500).json({ error: 'Error al crear usuario' });
             }
+            const userId = this.lastID;
+            // Obtener el usuario creado para enviar el correo
+            db.get('SELECT id, username, role, full_name, email, document_number, phone, program, ficha FROM users WHERE id = ?', [userId], (err, user) => {
+                if (err) {
+                    console.error('Error al obtener usuario para enviar correo:', err);
+                } else if (user) {
+                    // Enviar correo con el código QR (no bloquear la respuesta si falla)
+                    sendQREmail(user).catch(console.error);
+                }
+            });
+
             res.status(201).json({
                 message: 'Usuario creado exitosamente',
-                userId: this.lastID
+                userId: userId
             });
         }
     );
@@ -143,7 +235,7 @@ app.post('/api/users', authenticateToken, authorizeRole(['admin', 'guard']), (re
 
 // Ruta para obtener un usuario específico
 app.get('/api/users/:id', authenticateToken, authorizeRole(['admin', 'guard']), (req, res) => {
-    db.get('SELECT id, username, role, full_name, email, document_number, phone, is_active FROM users WHERE id = ?',
+    db.get('SELECT id, username, role, full_name, email, document_number, phone, program, ficha, is_active FROM users WHERE id = ?',
         [req.params.id], (err, user) => {
         if (err) {
             return res.status(500).json({ error: 'Error al obtener usuario' });
@@ -157,7 +249,7 @@ app.get('/api/users/:id', authenticateToken, authorizeRole(['admin', 'guard']), 
 
 // Ruta para actualizar un usuario
 app.put('/api/users/:id', authenticateToken, authorizeRole(['admin', 'guard']), (req, res) => {
-    const { role, full_name, email, document_number, phone, is_active } = req.body;
+    const { role, full_name, email, document_number, phone, program, ficha, is_active } = req.body;
     const userId = req.params.id;
 
     // Construir la consulta dinámicamente basado en los campos proporcionados
@@ -183,6 +275,14 @@ app.put('/api/users/:id', authenticateToken, authorizeRole(['admin', 'guard']), 
     if (phone !== undefined) {
         updates.push('phone = ?');
         values.push(phone);
+    }
+    if (program !== undefined) {
+        updates.push('program = ?');
+        values.push(program);
+    }
+    if (ficha !== undefined) {
+        updates.push('ficha = ?');
+        values.push(ficha);
     }
     if (is_active !== undefined) {
         updates.push('is_active = ?');
@@ -254,7 +354,7 @@ app.get('/api/access-logs', authenticateToken, authorizeRole(['admin', 'guard'])
 
     let query = `
         SELECT al.id, al.action, al.timestamp, al.location, al.device_info,
-               u.username, u.full_name, u.role
+               u.username, u.full_name, u.role, u.program, u.ficha
         FROM access_logs al
         JOIN users u ON al.user_id = u.id
         WHERE 1=1
@@ -311,7 +411,7 @@ app.get('/api/dashboard/stats', authenticateToken, authorizeRole(['admin']), (re
             total_visitors: 0,
             visitors_today: 0
         });
-    });
+    );
 });
 
 // Ruta para generar un código QR para un usuario
@@ -319,7 +419,7 @@ app.post('/api/qr/generate/:userId', authenticateToken, authorizeRole(['admin', 
     const userId = req.params.id || req.params.userId;
 
     // Verificar que el usuario existe
-    db.get('SELECT id, username, full_name, role FROM users WHERE id = ? AND is_active = 1', [userId], async (err, user) => {
+    db.get('SELECT id, username, full_name, role, program, ficha FROM users WHERE id = ? AND is_active = 1', [userId], async (err, user) => {
         if (err) {
             return res.status(500).json({ error: 'Error al obtener usuario' });
         }
@@ -333,6 +433,8 @@ app.post('/api/qr/generate/:userId', authenticateToken, authorizeRole(['admin', 
             username: user.username,
             fullName: user.full_name,
             role: user.role,
+            program: user.program,
+            ficha: user.ficha,
             timestamp: Date.now(),
             version: '1.0'
         };
@@ -383,7 +485,7 @@ app.post('/api/qr/validate', authenticateToken, async (req, res) => {
         }
 
         // Verificar que el usuario existe y está activo
-        db.get('SELECT id, username, full_name, role, is_active FROM users WHERE id = ?',
+        db.get('SELECT id, username, full_name, role, program, ficha, is_active FROM users WHERE id = ?',
             [parsedData.userId], (err, user) => {
             if (err) {
                 return res.status(500).json({ error: 'Error al validar usuario' });
@@ -404,7 +506,9 @@ app.post('/api/qr/validate', authenticateToken, async (req, res) => {
                     id: user.id,
                     username: user.username,
                     fullName: user.full_name,
-                    role: user.role
+                    role: user.role,
+                    program: user.program,
+                    ficha: user.ficha
                 },
                 qrData: parsedData
             });
